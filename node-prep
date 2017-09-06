@@ -1,0 +1,264 @@
+Node Prep
+ 
+cat <<EOF > /etc/yum.repos.d/kubernetes.repo
+[kubernetes]
+name=Kubernetes
+baseurl=https://packages.cloud.google.com/yum/repos/kubernetes-el7-x86_64
+enabled=1
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=https://packages.cloud.google.com/yum/doc/yum-key.gpg
+        https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
+EOF
+setenforce 0
+yum install epel-release
+yum update
+yum install -y wget wireshark bash-completion net-tools bind-utils docker python-pip
+yum install -y kubelet-1.6.7 kubeadm-1.6.7
+ 
+systemctl start docker && systemctl enable docker
+systemctl enable kubelet && systemctl start kubelet
+ 
+echo “net.bridge.bridge-nf-call-ip6tables=1” >> /etc/sysctl.conf
+echo “net.ipv4.ip_forward=1” >> /etc/sysctl.conf
+echo “net.bridge.bridge-nf-call-iptables=1” >> /etc/sysctl.conf
+ 
+ 
+Master bash completion
+echo “source <(kubectl completion bash)” >> .bashrc
+ 
+ACI Provisioning Tool
+pip install virtualenv
+virtualenv acc_provision
+source acc_provision/bin/activate
+pip install acc_provision
+acc_provision --sample > aci-containers-config.yaml
+yaml
+#
+# Configuration for ACI Fabric
+#
+aci_config:
+  system_id: kube-p4                     # Every opflex cluster must have a distict ID
+  apic_hosts:                                 # List of APIC hosts to connect for APIC API
+  - fab1-apic1.cam.ciscolabs.com
+  vmm_domain:                           # Kubernetes VMM domain configuration
+    encap_type: vxlan                   # Encap mode: vxlan or vlan
+    mcast_range:                        # Every opflex VMM must use a distinct range
+      start: 225.2.1.1
+      end: 225.2.255.255
+ 
+ 
+  # The following resources must already exist on the APIC,
+  # they are used, but not created by the provisioning tool.
+  aep: kube-p4                           # The AEP for ports/VPCs used by this cluster
+  vrf:                                              # This VRF used to create all kube-p1rnetes EPs
+    name: mykube-p4-vrf
+    tenant: kube-p4                      # This can be system-id or common
+  l3out:
+    name: mykube-p4_l3out              # Used to provision external IPs
+    external_networks:
+    - mykube-p4_extepg                    # Used for external contracts
+ 
+# Networks used by Kubernetes
+#
+net_config:
+  node_subnet: 172.21.0.1/16              # Subnet to use for nodes
+  pod_subnet: 172.22.0.1/16                  # Subnet to use for Kubernetes Pods
+  extern_dynamic: 10.68.165.1/25           # Subnet to use for dynamic external IPs
+  extern_static: 10.68.165.129/25                # Subnet to use for static external IPs
+  node_svc_subnet: 172.23.0.1/24          # Subnet to use for service graph
+  kubeapi_vlan: 501                        # The VLAN used by the physdom for nodes
+  service_vlan: 502                        # The VLAN used by LoadBalancer services
+  infra_vlan: 4093                          # The VLAN used by ACI infra
+ 
+#
+# Configuration that applies to each kube-p1rnetes node
+#
+node_config:
+  uplink_iface: enp7s0                       # The name of the uplink interface to ACI
+  vxlan_uplink_iface: enp7s0.4093         # for vxlan, the infra-vlan subinterface
+ 
+#
+# Configuration for container registry
+# Update if a custom container registry has been setup
+#
+registry:
+  version: 1.0-beta2                 # Check on https://hub.docker.com for latest version
+  image_prefix: noiro
+ 
+ 
+Node Uplinks
+ 
+cat <<EOF > /etc/sysconfig/network-scripts/route-enp7s0.4093
+224.0.0.0/4 dev enp7s0.4093
+EOF
+ 
+cat <<EOF > /etc/dhcp/dhclient-enp7s0.4093.conf
+send dhcp-client-identifier 01:$(cat /sys/class/net/enp7s0/address);
+request subnet-mask, domain-name, domain-name-servers, host-name;
+send host-name controller;
+option rfc3442-classless-static-routes code 121 = array of unsigned integer 8;
+option ms-classless-static-routes code 249 = array of unsigned integer 8;
+option wpad code 252 = string;
+also request rfc3442-classless-static-routes;
+also request ms-classless-static-routes;
+also request static-routes;also request wpad;
+also request ntp-servers;
+EOF
+ 
+interface
+Master-1
+Master-2
+Worker-1
+Worker-2
+cat <<EOF > /etc/sysconfig/network-scripts/ifcfg-enp7s0
+cat <<EOF > /etc/sysconfig/network-scripts/ifcfg-enp7s0
+DEVICE=enp7s0
+ONBOOT=yes
+NM_CONTROLLED=no
+MTU=9000
+EOF
+cat <<EOF > /etc/sysconfig/network-scripts/ifcfg-enp7s0
+DEVICE=enp7s0
+ONBOOT=yes
+NM_CONTROLLED=no
+MTU=9000
+EOF
+cat <<EOF > /etc/sysconfig/network-scripts/ifcfg-enp7s0
+DEVICE=enp7s0
+ONBOOT=yes
+NM_CONTROLLED=no
+MTU=9000
+EOF
+cat <<EOF > /etc/sysconfig/network-scripts/ifcfg-enp7s0
+DEVICE=enp7s0
+ONBOOT=yes
+NM_CONTROLLED=no
+MTU=9000
+EOF
+kubeapi vlan
+cat <<EOF > /etc/sysconfig/network-scripts/ifcfg-enp7s0.501
+cat <<EOF > /etc/sysconfig/network-scripts/ifcfg-enp7s0.501
+DEVICE=enp7s0.501
+BOOTPROTO=none
+ONBOOT=yes
+VLAN=yes
+NM_CONTROLLED=no
+ONPARENT=yes
+MTU=9000
+IPADDR=172.21.0.21
+PREFIX=16
+GATEWAY=172.21.0.1
+DEFAROUTE=yes
+EOF
+cat <<EOF > /etc/sysconfig/network-scripts/ifcfg-enp7s0.501
+DEVICE=enp7s0.501
+BOOTPROTO=none
+ONBOOT=yes
+VLAN=yes
+NM_CONTROLLED=no
+ONPARENT=yes
+MTU=9000
+IPADDR=172.21.0.22
+PREFIX=16
+GATEWAY=172.21.0.1
+DEFAROUTE=yes
+EOF
+cat <<EOF > /etc/sysconfig/network-scripts/ifcfg-enp7s0.501
+DEVICE=enp7s0.501
+BOOTPROTO=none
+ONBOOT=yes
+VLAN=yes
+NM_CONTROLLED=no
+ONPARENT=yes
+MTU=9000
+IPADDR=172.21.0.26
+PREFIX=16
+GATEWAY=172.21.0.1
+DEFAROUTE=yes
+EOF
+cat <<EOF > /etc/sysconfig/network-scripts/ifcfg-enp7s0.501
+DEVICE=enp7s0.501
+BOOTPROTO=none
+ONBOOT=yes
+VLAN=yes
+NM_CONTROLLED=no
+ONPARENT=yes
+MTU=9000
+IPADDR=172.21.0.27
+PREFIX=16
+GATEWAY=172.21.0.1
+DEFAROUTE=yes
+EOF
+aci infra vlan
+ 
+cat <<EOF > /etc/sysconfig/network-scripts/ifcfg-enp7s0.4093
+cat <<EOF > /etc/sysconfig/network-scripts/ifcfg-enp7s0.4093
+PERSISTENT_DHCLIENT=1
+DHCPRELEASE=1
+DEVICE=enp7s0.4093
+BOOTPROTO=none
+ONBOOT=yes
+VLAN=yes
+NM_CONTROLLED=no
+BOOTPROTO=dhcp
+ONPARENT=yes
+MTU=9000
+EOF
+cat <<EOF > /etc/sysconfig/network-scripts/ifcfg-enp7s0.4093
+PERSISTENT_DHCLIENT=1
+DHCPRELEASE=1
+DEVICE=enp7s0.4093
+BOOTPROTO=none
+ONBOOT=yes
+VLAN=yes
+NM_CONTROLLED=no
+BOOTPROTO=dhcp
+ONPARENT=yes
+MTU=9000
+EOF
+cat <<EOF > /etc/sysconfig/network-scripts/ifcfg-enp7s0.4093
+PERSISTENT_DHCLIENT=1
+DHCPRELEASE=1
+DEVICE=enp7s0.4093
+BOOTPROTO=none
+ONBOOT=yes
+VLAN=yes
+NM_CONTROLLED=no
+BOOTPROTO=dhcp
+ONPARENT=yes
+MTU=9000
+EOF
+cat <<EOF > /etc/sysconfig/network-scripts/ifcfg-enp7s0.4093
+PERSISTENT_DHCLIENT=1
+DHCPRELEASE=1
+DEVICE=enp7s0.4093
+BOOTPROTO=none
+ONBOOT=yes
+VLAN=yes
+NM_CONTROLLED=no
+BOOTPROTO=dhcp
+ONPARENT=yes
+MTU=9000
+EOF
+ 
+Bringup K8S
+ 
+kubeadm init --pod-network-cidr=172.22.0.1/16 --service-cidr=172.23.0.1/24 --apiserver-advertise-address=172.21.0.21
+ 
+acc_provision -c aci-containers-config.yaml -o aci-containers.yaml -a -u [apic username] -p [apic password]
+ 
+kubectl apply -f aci-containers.yaml
+ 
+Test Deployment
+ 
+wget https://raw.githubusercontent.com/microservices-demo/microservices-demo/master/deploy/kubernetes/complete-demo.yaml
+kubectl create namespace sock-shop
+kubectl apply -f complete-demo.yaml
+ 
+Edit the previous file and change the namespace from sock-shop to sock-shop2
+kubectl create namespace sock-shop2
+acikubectl set default-eg namespace sock-shop2 -t kube-p1 -a kubernetes -g sock-shop2
+kubectl apply -f complete-demo2.yaml
+ 
+kubectl --namespace=sock-shop expose deployment front-end --type=LoadBalancer --name=front-end-lb
